@@ -13,9 +13,9 @@ import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -26,11 +26,12 @@ public class MathExpressionController {
 	private static final Pattern ALLOWED_CHAR_PATTERN = Pattern.compile("^[0-9+\\-*/().\\s]+$");
 	private static final MathContext DIVIDE_CONTEXT = MathContext.DECIMAL128;
 
-	@GetMapping("/calculate")
-	public BaseResponse calculate(@RequestParam("expression") String expression) {
-		if (!StringUtils.hasText(expression)) {
+	@PostMapping("/calculate")
+	public BaseResponse calculate(@RequestBody ExpressionRequest request) {
+		if (request == null || !StringUtils.hasText(request.getExpression())) {
 			return BaseResponse.ERROR("表达式不能为空");
 		}
+		String expression = request.getExpression();
 		String trimmed = expression.trim();
 		if (!ALLOWED_CHAR_PATTERN.matcher(trimmed).matches()) {
 			return BaseResponse.ERROR("表达式包含非法字符，只允许数字、加减乘除、小数点和括号");
@@ -249,6 +250,21 @@ public class MathExpressionController {
 			break;
 		default:
 			throw new IllegalArgumentException("不支持的运算符: " + operator);
+		}
+	}
+
+	public static class ExpressionRequest {
+		private String expression;
+
+		public ExpressionRequest() {
+		}
+
+		public String getExpression() {
+			return expression;
+		}
+
+		public void setExpression(String expression) {
+			this.expression = expression;
 		}
 	}
 }
