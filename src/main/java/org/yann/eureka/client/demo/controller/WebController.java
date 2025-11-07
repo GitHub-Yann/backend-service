@@ -13,4 +13,9 @@ public class WebController {
 
         return "index";
     }
+
+    @GetMapping("/math-expression")
+    public String mathExpressionPage() {
+        return "math-expression";
+    }
 }
