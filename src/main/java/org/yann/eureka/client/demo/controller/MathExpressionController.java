@@ -18,6 +18,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 暴露数学表达式计算接口，并输出必要日志，便于排查问题。
+ */
 @RestController
 @RequestMapping("/api/math")
 public class MathExpressionController {
@@ -25,17 +28,26 @@ public class MathExpressionController {
 	private static final Logger LOGGER = LoggerFactory.getLogger(MathExpressionController.class);
 	private static final Pattern ALLOWED_CHAR_PATTERN = Pattern.compile("^[0-9+\\-*/().\\s]+$");
 	private static final MathContext DIVIDE_CONTEXT = MathContext.DECIMAL128;
+	private static final String MSG_EXPRESSION_REQUIRED = "表达式不能为空";
+	private static final String MSG_ILLEGAL_CHARS = "表达式包含非法字符，只允许数字、加减乘除、小数点及括号。";
+	private static final String MSG_SYSTEM_BUSY = "系统繁忙，请稍后再试";
 
+	/**
+	 * 计算客户端提交的数学表达式。
+	 */
 	@PostMapping("/calculate")
 	public BaseResponse calculate(@RequestBody ExpressionRequest request) {
 		if (request == null || !StringUtils.hasText(request.getExpression())) {
-			return BaseResponse.ERROR("表达式不能为空");
+			LOGGER.warn("Empty expression payload detected");
+			return BaseResponse.ERROR(BaseResponse.CODE_BAD_REQUEST, MSG_EXPRESSION_REQUIRED);
 		}
 		String expression = request.getExpression();
 		String trimmed = expression.trim();
 		if (!ALLOWED_CHAR_PATTERN.matcher(trimmed).matches()) {
-			return BaseResponse.ERROR("表达式包含非法字符，只允许数字、加减乘除、小数点和括号");
+			LOGGER.warn("Expression '{}' contains illegal characters", trimmed);
+			return BaseResponse.ERROR(BaseResponse.CODE_BAD_REQUEST, MSG_ILLEGAL_CHARS);
 		}
+		LOGGER.info("Start evaluating expression: {}", trimmed);
 		try {
 			validateParentheses(trimmed);
 			List<String> tokens = tokenize(trimmed);
@@ -43,12 +55,14 @@ public class MathExpressionController {
 			Map<String, Object> data = new HashMap<>();
 			data.put("expression", expression);
 			data.put("result", result.stripTrailingZeros().toPlainString());
-			return BaseResponse.OK("Calculation succeeded", data);
+			LOGGER.info("Expression '{}' evaluated successfully", trimmed);
+			return BaseResponse.OK("计算成功", data);
 		} catch (IllegalArgumentException ex) {
-			return BaseResponse.ERROR(ex.getMessage());
+			LOGGER.warn("Expression '{}' failed validation: {}", trimmed, ex.getMessage());
+			return BaseResponse.ERROR(BaseResponse.CODE_BAD_REQUEST, ex.getMessage());
 		} catch (Exception ex) {
 			LOGGER.error("Failed to evaluate expression '{}'", expression, ex);
-			return BaseResponse.ERROR("表达式计算失败: " + ex.getMessage());
+			return BaseResponse.ERROR(BaseResponse.CODE_SYSTEM_ERROR, "表达式计算失败：" + MSG_SYSTEM_BUSY);
 		}
 	}
 
@@ -65,10 +79,13 @@ public class MathExpressionController {
 			}
 		}
 		if (count != 0) {
-			throw new IllegalArgumentException("括号不匹配，存在未关闭的左括号");
+			throw new IllegalArgumentException("括号不匹配，存在未闭合的左括号");
 		}
 	}
 
+	/**
+	 * 将表达式分割为数字、运算符以及括号，支持一元正负号。
+	 */
 	private List<String> tokenize(String expression) {
 		List<String> tokens = new ArrayList<>();
 		int length = expression.length();
@@ -81,7 +98,6 @@ public class MathExpressionController {
 			}
 			if (isOperator(current)) {
 				if ((current == '-' || current == '+') && isUnaryOperator(tokens)) {
-					int start = index;
 					index++;
 					while (index < length && Character.isWhitespace(expression.charAt(index))) {
 						index++;
@@ -117,19 +133,22 @@ public class MathExpressionController {
 			throw new IllegalArgumentException("无法识别的字符: " + current);
 		}
 		if (tokens.isEmpty()) {
-			throw new IllegalArgumentException("表达式不能为空");
+			throw new IllegalArgumentException(MSG_EXPRESSION_REQUIRED);
 		}
 		if (isOperatorToken(tokens.get(tokens.size() - 1))) {
-			throw new IllegalArgumentException("表达式不能以运算符结尾");
+			throw new IllegalArgumentException("表达式以运算符结尾");
 		}
 		return tokens;
 	}
 
+	/**
+	 * 解析十进制数字，确保只出现一个小数点。
+	 */
 	private String parseNumber(String expression, int startIndex) {
-		int length = expression.length();
 		StringBuilder builder = new StringBuilder();
 		boolean decimalPointFound = false;
 		int index = startIndex;
+		int length = expression.length();
 		while (index < length) {
 			char current = expression.charAt(index);
 			if (Character.isDigit(current)) {
@@ -139,7 +158,7 @@ public class MathExpressionController {
 			}
 			if (current == '.') {
 				if (decimalPointFound) {
-					throw new IllegalArgumentException("数字中包含多个小数点");
+					throw new IllegalArgumentException("数字中不能出现多个小数点");
 				}
 				if (builder.length() == 0) {
 					builder.append('0');
@@ -152,7 +171,7 @@ public class MathExpressionController {
 			break;
 		}
 		if (builder.length() == 0) {
-			throw new IllegalArgumentException("数字解析失败，检查是否缺少数字");
+			throw new IllegalArgumentException("数字解析失败，请检查是否为合法的数字");
 		}
 		if (builder.charAt(builder.length() - 1) == '.') {
 			throw new IllegalArgumentException("数字不能以小数点结尾");
@@ -176,6 +195,9 @@ public class MathExpressionController {
 		return "+".equals(token) || "-".equals(token) || "*".equals(token) || "/".equals(token);
 	}
 
+	/**
+	 * 使用双栈算法计算表达式的最终值。
+	 */
 	private BigDecimal evaluate(List<String> tokens) {
 		Deque<BigDecimal> values = new ArrayDeque<>();
 		Deque<String> operators = new ArrayDeque<>();
@@ -185,10 +207,10 @@ public class MathExpressionController {
 				continue;
 			}
 			if (")".equals(token)) {
-				while (!operators.isEmpty() && !"(".equals(operators.peek())) {
+				while (!operators.isEmpty() && !("(".equals(operators.peek()))) {
 					applyOperator(values, operators.pop());
 				}
-				if (operators.isEmpty() || !"(".equals(operators.pop())) {
+				if (operators.isEmpty() || !("(".equals(operators.pop()))) {
 					throw new IllegalArgumentException("括号不匹配，缺少对应的左括号");
 				}
 				continue;
@@ -206,12 +228,12 @@ public class MathExpressionController {
 		while (!operators.isEmpty()) {
 			String operator = operators.pop();
 			if ("(".equals(operator)) {
-				throw new IllegalArgumentException("括号不匹配，存在未关闭的左括号");
+				throw new IllegalArgumentException("括号不匹配，存在未闭合的左括号");
 			}
 			applyOperator(values, operator);
 		}
 		if (values.size() != 1) {
-			throw new IllegalArgumentException("表达式解析失败，请检查运算符和数字的数量");
+			throw new IllegalArgumentException("表达式解析失败，请检查运算符与数字的数量");
 		}
 		return values.pop();
 	}
@@ -226,6 +248,9 @@ public class MathExpressionController {
 		return 0;
 	}
 
+	/**
+	 * 在值栈上执行指定的运算符。
+	 */
 	private void applyOperator(Deque<BigDecimal> values, String operator) {
 		if (values.size() < 2) {
 			throw new IllegalArgumentException("运算符 '" + operator + "' 缺少对应的操作数");
@@ -249,10 +274,13 @@ public class MathExpressionController {
 			values.push(left.divide(right, DIVIDE_CONTEXT));
 			break;
 		default:
-			throw new IllegalArgumentException("不支持的运算符: " + operator);
+			throw new IllegalArgumentException("不支持的运算符 " + operator);
 		}
 	}
 
+	/**
+	 * 计算请求载荷。
+	 */
 	public static class ExpressionRequest {
 		private String expression;
 

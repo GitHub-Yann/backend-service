@@ -109,11 +109,11 @@
         <h1>数学表达式计算器</h1>
         <form id="expressionForm">
             <label for="expressionInput">输入表达式（示例：<code>(1 + 2.5) * 3 - 4 / 2</code>）</label>
-            <input id="expressionInput" type="text" name="expression" placeholder="请输入数学表达式" autocomplete="off" />
+            <input id="expressionInput" type="text" name="expression" placeholder="请输入需要计算的数学表达式" autocomplete="off" />
             <button type="submit" id="submitButton">开始计算</button>
         </form>
         <section id="resultPanel" class="result" hidden></section>
-        <p class="hint">提示：支持加、减、乘、除、小数与括号。提交后将调用后端接口 <code>/api/math/calculate</code>。</p>
+        <p class="hint">说明：支持加、减、乘、除、小数与括号。提交后会调用后端接口 <code>/api/math/calculate</code>。</p>
     </main>
 
     <script>
@@ -138,17 +138,29 @@
                         },
                         body: JSON.stringify({ expression })
                     });
+                    const contentType = response.headers.get("content-type") || "";
+                    const isJson = contentType.includes("application/json");
+                    const payload = isJson ? await response.json() : null;
                     if (!response.ok) {
-                        throw new Error("网络请求失败，状态码：" + response.status);
+                        const fallback = payload && payload.errorMsg
+                            ? payload.errorMsg
+                            : `网络请求失败，状态码: ${response.status}`;
+                        showMessage(fallback, true);
+                        return;
                     }
-                    const payload = await response.json();
+                    if (!payload) {
+                        showMessage("服务端返回空响应，请稍后再试。", true);
+                        return;
+                    }
                     if (!payload.result) {
-                        showMessage(payload.errorMsg || "表达式计算失败，请稍后重试。", true);
+                        const prefix = payload.errorCode ? `[${payload.errorCode}] ` : "";
+                        const message = payload.errorMsg || "表达式计算失败，请稍后重试。";
+                        showMessage(prefix + message, true);
                         return;
                     }
                     const data = payload.data || {};
                     const expressionText = data.expression || expression;
-                    const resultText = data.result ?? "无结果";
+                    const resultText = data.result ?? "暂无结果";
                     showMessage(`表达式：${expressionText}\n结果：${resultText}`, false);
                 } catch (error) {
                     showMessage(error.message || "未知错误，请稍后再试。", true);

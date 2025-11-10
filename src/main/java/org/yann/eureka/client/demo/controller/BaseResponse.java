@@ -1,12 +1,18 @@
 package org.yann.eureka.client.demo.controller;
 
 public class BaseResponse {
+
+	public static final String CODE_BAD_REQUEST = "INVALID_EXPRESSION";
+	public static final String CODE_SYSTEM_ERROR = "SYSTEM_ERROR";
+
 	private boolean result = true;
+	private String errorCode;
 	private String errorMsg;
 	private Object data;
 
-	public BaseResponse(boolean result, String errorMsg, Object obj) {
+	public BaseResponse(boolean result, String errorCode, String errorMsg, Object obj) {
 		this.result = result;
+		this.errorCode = errorCode;
 		this.errorMsg = errorMsg;
 		this.data = obj;
 	}
@@ -15,15 +21,27 @@ public class BaseResponse {
 	}
 
 	public static BaseResponse OK(Object obj) {
-		return new BaseResponse(true, "Api access succeeded", obj);
+		return new BaseResponse(true, null, "Api access succeeded", obj);
 	}
 
 	public static BaseResponse OK(String msg, Object obj) {
-		return new BaseResponse(true, msg, obj);
+		return new BaseResponse(true, null, msg, obj);
 	}
 
 	public static BaseResponse ERROR(String errorMsg) {
-		return new BaseResponse(false, errorMsg, null);
+		return ERROR(CODE_SYSTEM_ERROR, errorMsg);
+	}
+
+	public static BaseResponse ERROR(String errorCode, String errorMsg) {
+		return new BaseResponse(false, errorCode, errorMsg, null);
+	}
+
+	public String getErrorCode() {
+		return errorCode;
+	}
+
+	public void setErrorCode(String errorCode) {
+		this.errorCode = errorCode;
 	}
 
 	public String getErrorMsg() {
