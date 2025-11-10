@@ -27,3 +27,10 @@ server:
       force: true
       enabled: true
 
+# 数学表达式历史记录配置
+math:
+  history:
+    enabled: true
+    max-size: 100
+    persistence-enabled: true
+    file-path: data/math-history.json

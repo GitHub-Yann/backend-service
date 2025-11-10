@@ -101,6 +101,92 @@
             font-size: 14px;
             color: #657290;
         }
+
+        .history-section {
+            margin-top: 32px;
+            padding: 20px;
+            border-radius: 12px;
+            background-color: #f8fafc;
+            border: 1px solid #e0e7ff;
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .history-header h2 {
+            margin: 0;
+            font-size: 20px;
+            color: #2d3a4a;
+        }
+
+        .history-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .history-item {
+            padding: 12px 0;
+            border-top: 1px dashed #d5dffc;
+        }
+
+        .history-item:first-child {
+            border-top: none;
+        }
+
+        .history-expression {
+            font-weight: 600;
+            color: #2b3648;
+            word-break: break-word;
+        }
+
+        .history-result {
+            margin-top: 4px;
+            color: #4d5b6a;
+        }
+
+        .history-meta {
+            margin-top: 6px;
+            font-size: 13px;
+            color: #7b879c;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge.success {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge.error {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+
+        .history-empty {
+            margin-top: 8px;
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        .history-actions button {
+            width: auto;
+            min-width: 96px;
+            margin-top: 0;
+        }
     </style>
 </head>
 
@@ -114,19 +200,109 @@
         </form>
         <section id="resultPanel" class="result" hidden></section>
         <p class="hint">说明：支持加、减、乘、除、小数与括号。提交后会调用后端接口 <code>/api/math/calculate</code>。</p>
+        <section class="history-section">
+            <div class="history-header">
+                <h2>历史记录</h2>
+                <div class="history-actions">
+                    <button type="button" id="refreshHistoryButton">重新加载</button>
+                </div>
+            </div>
+            <ul id="historyList" class="history-list" hidden></ul>
+            <p id="historyEmpty" class="history-empty">暂无历史记录，先尝试计算一个表达式吧。</p>
+        </section>
     </main>
 
     <script>
         (function () {
+            const HISTORY_LIMIT = 20;
             const form = document.getElementById("expressionForm");
             const input = document.getElementById("expressionInput");
             const button = document.getElementById("submitButton");
             const resultPanel = document.getElementById("resultPanel");
+            const historyList = document.getElementById("historyList");
+            const historyEmpty = document.getElementById("historyEmpty");
+            const refreshHistoryButton = document.getElementById("refreshHistoryButton");
 
             function showMessage(message, isError) {
                 resultPanel.textContent = message;
                 resultPanel.classList.toggle("error", Boolean(isError));
                 resultPanel.hidden = false;
+            }
+
+            function formatDate(value) {
+                if (!value) {
+                    return "未知时间";
+                }
+                const date = new Date(value);
+                if (Number.isNaN(date.getTime())) {
+                    return value;
+                }
+                return date.toLocaleString();
+            }
+
+            function renderHistory(records) {
+                if (!Array.isArray(records) || records.length === 0) {
+                    historyList.hidden = true;
+                    historyEmpty.hidden = false;
+                    historyEmpty.textContent = "暂无历史记录，先尝试计算一个表达式吧。";
+                    return;
+                }
+                historyList.innerHTML = "";
+                historyList.hidden = false;
+                historyEmpty.hidden = true;
+                records.forEach((record) => {
+                    const item = document.createElement("li");
+                    item.className = "history-item";
+
+                    const badge = document.createElement("span");
+                    badge.className = `badge ${record.success ? "success" : "error"}`;
+                    badge.textContent = record.success ? "成功" : "失败";
+
+                    const expression = document.createElement("div");
+                    expression.className = "history-expression";
+                    expression.textContent = record.expression || record.rawExpression || "(空表达式)";
+
+                    const result = document.createElement("div");
+                    result.className = "history-result";
+                    if (record.success) {
+                        result.textContent = `结果：${record.result || "未知"}`;
+                    } else {
+                        const message = record.errorMsg || "未知错误";
+                        const code = record.errorCode ? `[${record.errorCode}] ` : "";
+                        result.textContent = `错误：${code}${message}`;
+                    }
+
+                    const meta = document.createElement("div");
+                    meta.className = "history-meta";
+                    const duration = typeof record.durationMillis === "number" ? `${record.durationMillis}ms` : "耗时未知";
+                    const ip = record.requestIp || "未知IP";
+                    meta.textContent = `${formatDate(record.evaluatedAt)} · ${duration} · ${ip}`;
+
+                    item.appendChild(badge);
+                    item.appendChild(expression);
+                    item.appendChild(result);
+                    item.appendChild(meta);
+                    historyList.appendChild(item);
+                });
+            }
+
+            async function loadHistory() {
+                try {
+                    refreshHistoryButton.disabled = true;
+                    const response = await fetch(`/api/math/history?limit=${HISTORY_LIMIT}`);
+                    if (!response.ok) {
+                        throw new Error(`历史记录请求失败，状态码：${response.status}`);
+                    }
+                    const payload = await response.json();
+                    const records = (payload.data && payload.data.records) || [];
+                    renderHistory(records);
+                } catch (error) {
+                    historyList.hidden = true;
+                    historyEmpty.hidden = false;
+                    historyEmpty.textContent = `无法加载历史记录：${error.message || error}`;
+                } finally {
+                    refreshHistoryButton.disabled = false;
+                }
             }
 
             async function calculateExpression(expression) {
@@ -179,8 +355,15 @@
                 showMessage("计算中，请稍候...", false);
                 calculateExpression(expression).finally(() => {
                     button.disabled = false;
+                    loadHistory();
                 });
             });
+
+            refreshHistoryButton.addEventListener("click", function () {
+                loadHistory();
+            });
+
+            loadHistory();
         })();
     </script>
 </body>

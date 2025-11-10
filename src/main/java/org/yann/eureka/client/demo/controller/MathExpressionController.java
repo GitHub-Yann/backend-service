@@ -2,21 +2,29 @@ package org.yann.eureka.client.demo.controller;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+
+import javax.servlet.http.HttpServletRequest;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.yann.eureka.client.demo.service.MathHistoryRecord;
+import org.yann.eureka.client.demo.service.MathHistoryService;
 import org.yann.eureka.client.demo.util.BaseResponse;
 
 /**
@@ -33,20 +41,34 @@ public class MathExpressionController {
 	private static final String MSG_ILLEGAL_CHARS = "表达式包含非法字符，只允许数字、加减乘除、小数点及括号。";
 	private static final String MSG_SYSTEM_BUSY = "系统繁忙，请稍后再试";
 
+	private final MathHistoryService historyService;
+
+	public MathExpressionController(MathHistoryService historyService) {
+		this.historyService = historyService;
+	}
+
 	/**
 	 * 计算客户端提交的数学表达式。
 	 */
 	@PostMapping("/calculate")
-	public BaseResponse calculate(@RequestBody ExpressionRequest request) {
-		if (request == null || !StringUtils.hasText(request.getExpression())) {
+	public BaseResponse calculate(@RequestBody ExpressionRequest request, HttpServletRequest servletRequest) {
+		long startNano = System.nanoTime();
+		String rawExpression = request != null ? request.getExpression() : null;
+		String trimmed = rawExpression != null ? rawExpression.trim() : null;
+		String clientIp = resolveClientIp(servletRequest);
+		if (!StringUtils.hasText(trimmed)) {
 			LOGGER.warn("Empty expression payload detected");
-			return BaseResponse.ERROR(BaseResponse.CODE_BAD_REQUEST, MSG_EXPRESSION_REQUIRED);
+			BaseResponse response = BaseResponse.ERROR(BaseResponse.CODE_BAD_REQUEST, MSG_EXPRESSION_REQUIRED);
+			recordHistory(rawExpression, trimmed, false, null, BaseResponse.CODE_BAD_REQUEST, MSG_EXPRESSION_REQUIRED,
+					clientIp, startNano);
+			return response;
 		}
-		String expression = request.getExpression();
-		String trimmed = expression.trim();
 		if (!ALLOWED_CHAR_PATTERN.matcher(trimmed).matches()) {
 			LOGGER.warn("Expression '{}' contains illegal characters", trimmed);
-			return BaseResponse.ERROR(BaseResponse.CODE_BAD_REQUEST, MSG_ILLEGAL_CHARS);
+			BaseResponse response = BaseResponse.ERROR(BaseResponse.CODE_BAD_REQUEST, MSG_ILLEGAL_CHARS);
+			recordHistory(rawExpression, trimmed, false, null, BaseResponse.CODE_BAD_REQUEST, MSG_ILLEGAL_CHARS,
+					clientIp, startNano);
+			return response;
 		}
 		LOGGER.info("Start evaluating expression: {}", trimmed);
 		try {
@@ -54,17 +76,36 @@ public class MathExpressionController {
 			List<String> tokens = tokenize(trimmed);
 			BigDecimal result = evaluate(tokens);
 			Map<String, Object> data = new HashMap<>();
-			data.put("expression", expression);
-			data.put("result", result.stripTrailingZeros().toPlainString());
+			String resultText = result.stripTrailingZeros().toPlainString();
+			data.put("expression", rawExpression);
+			data.put("result", resultText);
 			LOGGER.info("Expression '{}' evaluated successfully", trimmed);
+			recordHistory(rawExpression, trimmed, true, resultText, null, null, clientIp, startNano);
 			return BaseResponse.OK("计算成功", data);
 		} catch (IllegalArgumentException ex) {
 			LOGGER.warn("Expression '{}' failed validation: {}", trimmed, ex.getMessage());
+			recordHistory(rawExpression, trimmed, false, null, BaseResponse.CODE_BAD_REQUEST, ex.getMessage(), clientIp,
+					startNano);
 			return BaseResponse.ERROR(BaseResponse.CODE_BAD_REQUEST, ex.getMessage());
 		} catch (Exception ex) {
-			LOGGER.error("Failed to evaluate expression '{}'", expression, ex);
-			return BaseResponse.ERROR(BaseResponse.CODE_SYSTEM_ERROR, "表达式计算失败：" + MSG_SYSTEM_BUSY);
+			LOGGER.error("Failed to evaluate expression '{}'", rawExpression, ex);
+			String errorMsg = "表达式计算失败：" + MSG_SYSTEM_BUSY;
+			recordHistory(rawExpression, trimmed, false, null, BaseResponse.CODE_SYSTEM_ERROR, errorMsg, clientIp,
+					startNano);
+			return BaseResponse.ERROR(BaseResponse.CODE_SYSTEM_ERROR, errorMsg);
 		}
+	}
+
+	@GetMapping("/history")
+	public BaseResponse history(@RequestParam(value = "limit", defaultValue = "20") int limit) {
+		if (limit <= 0 || limit > 200) {
+			return BaseResponse.ERROR(BaseResponse.CODE_BAD_REQUEST, "limit 需在 1~200 之间");
+		}
+		List<MathHistoryRecord> latest = historyService.latest(limit);
+		Map<String, Object> data = new HashMap<>();
+		data.put("records", latest);
+		data.put("limit", limit);
+		return BaseResponse.OK("获取历史记录成功", data);
 	}
 
 	private void validateParentheses(String expression) {
@@ -295,5 +336,38 @@ public class MathExpressionController {
 		public void setExpression(String expression) {
 			this.expression = expression;
 		}
+	}
+
+	private void recordHistory(String rawExpression, String normalizedExpression, boolean success, String result,
+			String errorCode, String errorMsg, String requestIp, long startNano) {
+		if (historyService == null) {
+			return;
+		}
+		MathHistoryRecord record = new MathHistoryRecord();
+		record.setRawExpression(rawExpression);
+		record.setExpression(normalizedExpression);
+		record.setSuccess(success);
+		record.setResult(result);
+		record.setErrorCode(errorCode);
+		record.setErrorMsg(errorMsg);
+		record.setRequestIp(requestIp);
+		record.setEvaluatedAt(Instant.now());
+		record.setDurationMillis(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNano));
+		historyService.append(record);
+	}
+
+	private String resolveClientIp(HttpServletRequest request) {
+		if (request == null) {
+			return "UNKNOWN";
+		}
+		String forwarded = request.getHeader("X-Forwarded-For");
+		if (StringUtils.hasText(forwarded)) {
+			return forwarded.split(",")[0].trim();
+		}
+		String realIp = request.getHeader("X-Real-IP");
+		if (StringUtils.hasText(realIp)) {
+			return realIp;
+		}
+		return request.getRemoteAddr();
 	}
 }
