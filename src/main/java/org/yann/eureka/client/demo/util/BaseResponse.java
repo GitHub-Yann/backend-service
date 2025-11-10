@@ -1,4 +1,4 @@
-package org.yann.eureka.client.demo.controller;
+package org.yann.eureka.client.demo.util;
 
 public class BaseResponse {
 

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.yann.eureka.client.demo.util.BaseResponse;
 
 /**
  * 暴露数学表达式计算接口，并输出必要日志，便于排查问题。
