@@ -11,7 +11,7 @@
 # 需求改动
 - `src/main/java/org/yann/eureka/client/demo/controller/MathExpressionController.java`：补充日志、注释以及更精细的异常捕获/返回。
 - `src/main/java/org/yann/eureka/client/demo/controller/BaseResponse.java`：如需提供错误码或统一消息字段，扩展响应结构及静态工厂方法。
-- `src/main/java/org/yann/eureka/client/demo/controller/GlobalExceptionHandler.java`（新）：集中处理未捕获异常，转换为 `BaseResponse` 并记录日志。
+- `src/main/java/org/yann/eureka/client/demo/util/GlobalExceptionHandler.java`（新）：集中处理未捕获异常，转换为 `BaseResponse` 并记录日志。
 - `src/main/resources/templates/math-expression.html`（如有需要）：根据新的错误提示格式，调整前端展示文案。
 
 # 分析时间
