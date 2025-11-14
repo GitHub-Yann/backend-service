@@ -51,14 +51,26 @@ project-x/           # python项目根目录
 ```
 
 ## 编码风格与命名规范
+### 1. java语言
 - Java 源码保持与现有文件一致的制表符缩进、注解置于类或方法上方、行宽控制在 120 列以内。
 - 包名沿用现有的层级，新增模块按领域创建子包。
-  - 例如当前项目有模块（子包）为 `org.projecta.controller`，`org.projecta.service`，`org.projecta.dao`。
-    - 那么主包的层级就是 `org.projecta`。
-    - 如果新增工具类的模块（子包），那么工具类所在的包名就是 `org.projecta.util`。
-    - 如果新增配置文件的模块（子包），那么配置文件所在的包名就是 `org.projecta.config`。
+  - 例如当前项目有模块（子包）为 `com.example.project.controller`，`com.example.project.service`，`com.example.project.dao`。
+    - 那么主包的层级就是 `com.example.project`。
+    - 如果新增工具类的模块（子包），那么工具类所在的包名就是 `com.example.project.util`。
+    - 如果新增配置文件的模块（子包），那么配置文件所在的包名就是 `com.example.project.config`。
+
+### 2. python语言
+- python源码保持与现有文件一致的制表符缩进、注解置于类或方法下方
+- 函数命名请使用小写，多个单词用下划线连接，例如：`get_user_info`
+- 类命名请使用大写，多个单词用驼峰连接，例如：`UserInfo`
+- 包名
+  - 公共的模块，同一放到`utils`包下
+  - 业务逻辑的封装模块可以放到其他包下，包名定义的简单明了即可
 
 ## 常规的开发规范
+### 1. java语言
 - 日志
   - 请使用 `LoggerFactory.getLogger(...)` 创建的 `private static final Logger`，输出文本请写成可检索的英文短语。
 
+### 2. python语言
+- 暂无
